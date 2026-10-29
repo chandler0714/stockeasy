@@ -12,3 +12,4 @@
 - Delivery: README, local macOS launcher and GitHub Actions test template included. Public sync is explicitly authorized by the user.
 - Publishing credentials lack workflow scope; source will include docs/ci-tests.yml as a template rather than modifying access permissions. Local tests remain available.
 - Source successfully pushed to public main and app.py read back with the GitHub connector. Local preview is running at 127.0.0.1:8501; demo tab preserved for user inspection.
+- Follow-up: user requested automatic live viewing. Default now 15-second fragment refresh, with 5/30/60/120/300-second options and pause; quote cache lifetime follows the chosen interval. History analysis stays outside the auto-refresh fragment. Added regression tests for the default/pause controls and cache interval.

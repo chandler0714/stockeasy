@@ -110,8 +110,8 @@ with st.sidebar:
                 st.session_state.pop("selected_key", None)
                 st.rerun()
     st.divider()
-    refresh_label = st.selectbox("行情自动刷新", ["手动刷新", "每 60 秒", "每 120 秒", "每 300 秒"], key="refresh_interval")
-    st.caption("自动刷新仅更新自选行情；历史日线按需读取，每小时更新缓存。")
+    refresh_label = st.selectbox("行情自动刷新", ["暂停（手动刷新）", "每 5 秒", "每 15 秒", "每 30 秒", "每 60 秒", "每 120 秒", "每 300 秒"], index=2, key="refresh_interval_v2")
+    st.caption("默认自动刷新行情；上游响应慢时会顺延。数据可能延迟，基金净值按日公布。")
     st.markdown('<div class="source-label">数据保存在本机<br>无需密钥 · 不连接交易账户</div>', unsafe_allow_html=True)
 
 head, badge = st.columns([5, 1.6], vertical_alignment="center")
@@ -131,7 +131,7 @@ if not watchlist:
     st.stop()
 
 service = MarketService(store)
-interval = None if refresh_label == "手动刷新" else int(refresh_label.split()[1])
+interval = None if refresh_label == "暂停（手动刷新）" else int(refresh_label.split()[1])
 
 
 @st.fragment(run_every=interval)
@@ -145,7 +145,7 @@ def quote_panel():
 
     def load(item):
         try:
-            return item.key, demo_quote(item, TODAY) if demo else service.quote(item, force=force), None
+            return item.key, demo_quote(item, TODAY) if demo else service.quote(item, force=force, max_age_seconds=interval or 60), None
         except Exception as exc:
             return item.key, None, str(exc)
 
@@ -156,6 +156,9 @@ def quote_panel():
                     quotes[key] = quote
                 else:
                     errors[key] = error
+    checked_at = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M:%S")
+    refresh_status = f"自动刷新中 · 每 {interval} 秒" if interval else "自动刷新已暂停 · 可点击刷新行情"
+    st.caption(f"{refresh_status}　·　最近检查 {checked_at}（北京时间）")
     cards = st.columns(min(4, len(watchlist)))
     for column, item in zip(cards, watchlist[:4]):
         quote = quotes.get(item.key)
@@ -278,7 +281,7 @@ with about_tab:
 | 历史价格 | 同上，本地 SQLite 缓存 | 默认日线；交易日历不同，跨市场日期不直接等价 |
 | 演示模式 | 固定种子的合成序列 | 仅用于预览；数据库与真实行情隔离，CSV 标注 DEMO |
 """)
-    st.markdown("**缓存与刷新：** 行情缓存有效期 60 秒，历史缓存 1 小时；刷新失败保留原时间并标注。原始价格后续更新最近 7 天，向前扩展区间时补齐更早历史。复权价格刷新时重载整个已缓存区间，保持口径一致。")
+    st.markdown("**缓存与刷新：** 默认每 15 秒自动检查行情，可选 5 / 30 / 60 / 120 / 300 秒或暂停；行情缓存随所选间隔到期，数据源响应慢时刷新会顺延。历史缓存 1 小时；刷新失败保留原时间并标注。原始价格后续更新最近 7 天，向前扩展区间时补齐更早历史。复权价格刷新时重载整个已缓存区间，保持口径一致。")
     st.markdown("**价格口径：** 前/后复权及 Yahoo 复权用于比较历史价格；不同来源的调整规则可能不同。复权价格与未复权价格分别缓存，避免混用。")
     st.markdown("**网络与使用：** 两个来源均不保证持续可用或固定延迟。数据使用遵循上游条款；本工具用于个人观察和研究。所有自选、缓存保存在本机 `data/`，不会随代码上传。")
 

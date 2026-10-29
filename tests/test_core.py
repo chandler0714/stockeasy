@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -122,6 +122,14 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(fallback.stale)
         self.assertEqual(fallback.fetched_at, initial.fetched_at)
         self.assertAlmostEqual(fallback.change_pct, -.1)
+
+    def test_quote_cache_respects_selected_refresh_interval(self):
+        initial = self.service.quote(self.instrument)
+        initial.fetched_at = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
+        self.store.save_quote(self.instrument.key, initial)
+        self.provider.quote = lambda item: {"price": 101., "previous_close": 100.}
+        self.assertEqual(self.service.quote(self.instrument, max_age_seconds=15).price, 99.)
+        self.assertEqual(self.service.quote(self.instrument, max_age_seconds=5).price, 101.)
 
     def test_invalid_quote_not_cached(self):
         self.provider.quote = lambda instrument: {"price": float("nan"), "previous_close": 100}

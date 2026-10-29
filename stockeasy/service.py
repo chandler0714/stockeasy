@@ -62,9 +62,9 @@ class MarketService:
     def _slice(result, start, end):
         return replace(result, frame=result.frame.loc[result.frame.date.between(pd.Timestamp(start), pd.Timestamp(end))].reset_index(drop=True))
 
-    def quote(self, instrument, force=False):
+    def quote(self, instrument, force=False, max_age_seconds=60):
         cached = self.store.load_quote(instrument.key)
-        if cached and not force and age_seconds(cached.fetched_at) < 60:
+        if cached and not force and age_seconds(cached.fetched_at) < max_age_seconds:
             return cached
         try:
             values = self.provider.quote(instrument)
