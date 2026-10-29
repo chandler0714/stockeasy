@@ -109,12 +109,12 @@ class DashboardTests(unittest.TestCase):
 
     def test_auto_refresh_enabled_by_default_and_can_pause(self):
         app = AppTest.from_file(APP, default_timeout=20).run()
-        self.assertEqual(app.selectbox(key="refresh_interval_v2").value, "每 15 秒")
-        self.assertTrue(any("自动刷新中" in item.value and "15 秒" in item.value for item in app.caption))
-        app.selectbox(key="refresh_interval_v2").set_value("每 5 秒").run()
-        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.selectbox(key="refresh_interval_v3").value, "每 5 秒")
         self.assertTrue(any("自动刷新中" in item.value and "5 秒" in item.value for item in app.caption))
-        app.selectbox(key="refresh_interval_v2").set_value("暂停（手动刷新）").run()
+        app.selectbox(key="refresh_interval_v3").set_value("每 15 秒").run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("自动刷新中" in item.value and "15 秒" in item.value for item in app.caption))
+        app.selectbox(key="refresh_interval_v3").set_value("暂停（手动刷新）").run()
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(any("自动刷新已暂停" in item.value for item in app.caption))
 

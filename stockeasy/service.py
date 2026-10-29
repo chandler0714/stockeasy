@@ -63,6 +63,8 @@ class MarketService:
         return replace(result, frame=result.frame.loc[result.frame.date.between(pd.Timestamp(start), pd.Timestamp(end))].reset_index(drop=True))
 
     def quote(self, instrument, force=False, max_age_seconds=60):
+        if instrument.market == "FUND":
+            max_age_seconds = max(max_age_seconds, 300)
         cached = self.store.load_quote(instrument.key)
         if cached and not force and age_seconds(cached.fetched_at) < max_age_seconds:
             return cached
@@ -79,5 +81,9 @@ class MarketService:
             return quote
         except Exception as exc:
             if cached:
-                return replace(cached, stale=True, error=str(exc))
+                failed = replace(cached, stale=True, error=str(exc))
+                # A later TTL cache hit is not a successful upstream refresh.
+                # Keep the failure until a genuine successful fetch replaces it.
+                self.store.save_quote(instrument.key, failed)
+                return failed
             raise

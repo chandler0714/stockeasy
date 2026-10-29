@@ -131,6 +131,28 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(self.service.quote(self.instrument, max_age_seconds=15).price, 99.)
         self.assertEqual(self.service.quote(self.instrument, max_age_seconds=5).price, 101.)
 
+    def test_daily_fund_nav_does_not_redownload_every_five_seconds(self):
+        fund = Instrument.create("FUND", "110022")
+        initial = self.service.quote(fund)
+        initial.fetched_at = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
+        self.store.save_quote(fund.key, initial)
+        self.provider.failing = True
+        cached = self.service.quote(fund, max_age_seconds=5)
+        self.assertFalse(cached.stale)
+        self.assertEqual(cached.fetched_at, initial.fetched_at)
+        # Manual refresh still tries the provider, reports the failure, and
+        # preserves the old source timestamp instead of inventing a fresh NAV.
+        self.assertTrue(self.service.quote(fund, force=True, max_age_seconds=5).stale)
+        after_failure = self.service.quote(fund, max_age_seconds=5)
+        self.assertTrue(after_failure.stale)
+        self.assertIn("offline", after_failure.error)
+        self.assertEqual(after_failure.fetched_at, initial.fetched_at)
+        self.provider.failing = False
+        recovered = self.service.quote(fund, force=True, max_age_seconds=5)
+        self.assertFalse(recovered.stale)
+        self.assertEqual(recovered.error, "")
+        self.assertFalse(self.store.load_quote(fund.key).stale)
+
     def test_invalid_quote_not_cached(self):
         self.provider.quote = lambda instrument: {"price": float("nan"), "previous_close": 100}
         with self.assertRaises(ValueError):
