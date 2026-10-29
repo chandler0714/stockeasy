@@ -138,7 +138,7 @@ class CoreTests(unittest.TestCase):
 
     def test_etf_quote_uses_etf_market_not_stock_code_heuristic(self):
         response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"data": {"f43": 4.2, "f60": 4.1, "f86": 1793257200}})
-        with patch("requests.get", return_value=response) as get:
+        with patch("stockeasy.providers.fetch_tencent_quote", side_effect=ValueError("unavailable")), patch("requests.get", return_value=response) as get:
             result = fetch_quote(Instrument.create("ETF", "510300"))
         self.assertEqual(get.call_args.kwargs["params"]["secid"], "1.510300")
         self.assertEqual(result["price"], 4.2)

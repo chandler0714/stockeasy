@@ -12,7 +12,7 @@ from stockeasy.discovery import BENCHMARKS, CATALOG, CATEGORIES, HistoryScanner,
 from stockeasy.feeds import QuoteFeed
 from stockeasy.history_panel import render_history
 from stockeasy.models import Instrument, MARKETS
-from stockeasy.presentation import beijing_day, idea_html, pct, time_label
+from stockeasy.presentation import beijing_day, idea_html, pct, quote_status, time_label
 from stockeasy.service import MarketService
 from stockeasy.storage import Store
 
@@ -41,7 +41,7 @@ def action(kind, key):
 with st.sidebar:
     st.markdown('<div class="brand">↗ stock<span>easy</span></div><div class="brand-sub">YOUR MARKET WORKSPACE</div>', unsafe_allow_html=True)
     demo = st.toggle("演示模式", value=os.environ.get("STOCKEASY_DEMO") == "1" or st.query_params.get("demo") == "1", key="demo_mode")
-    st.caption("合成数据 / 仅供界面体验" if demo else "AKShare + yfinance")
+    st.caption("合成数据 / 仅供界面体验" if demo else "腾讯报价 · AKShare / yfinance 历史")
 
 store = Store(DATA_DIR / ("demo.sqlite" if demo else "market.sqlite"))
 watchlist = store.watchlist()
@@ -125,11 +125,22 @@ def overview():
         quote = quotes.get(item.key)
         with column:
             st.metric(item.name, f"{quote.price:,.3f}" if quote else "—", pct(quote.change_pct) if quote and quote.change_pct is not None else None, delta_color="inverse")
-            status = "合成演示" if demo else "更新中" if item.key in waiting else "缓存 / 更新失败" if item.key in errors or (quote and quote.stale) else "报价快照" if quote else "暂不可用"
+            status = quote_status(quote, errors.get(item.key, ""), pending=item.key in waiting, demo=demo)
             st.caption(f"{item.currency} · {status}")
+            if quote and not demo:
+                st.caption(f"{quote.source.split(' · ')[0]} · 源时间 {time_label(quote.market_time)}")
     checked = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M:%S")
     status = f"自动刷新中 · 每 {interval} 秒" if interval else "自动刷新已暂停"
     st.caption(f"{status}　·　界面更新 {checked}（北京时间）　·　ETF 代理行情，非指数点位")
+    if not demo:
+        with st.expander("行情来源与刷新状态"):
+            st.caption("免费快照可能延时；非交易时段显示最近可用报价。源时间与本机获取时间分别列出，不能把刷新成功理解为价格正在变动。失败后至少等待 30 秒再自动重试，点击更新可主动重试。")
+            for item in quote_items:
+                quote = quotes.get(item.key)
+                reason = errors.get(item.key) or (quote.error if quote and quote.stale else "")
+                label = quote_status(quote, reason, pending=item.key in waiting)
+                detail = f"{quote.source} · 源时间 {time_label(quote.market_time)} · 获取 {time_label(quote.fetched_at)}" if quote else "尚无可用报价"
+                st.caption(f"{item.name}（{item.symbol}）· {label} · {detail}" + (f"\n\n失败原因：{reason}" if reason else ""))
     valid = [q for key, q in quotes.items() if key in {item.key for item in watchlist} and key not in errors and not q.stale and q.change_pct is not None]
     up, down = sum(q.change_pct > 0 for q in valid), sum(q.change_pct < 0 for q in valid)
     st.markdown(f'<div class="coverage"><span>自选样本上涨 <b>{up}</b></span><span>下跌 <b>{down}</b></span><span>有效报价 <b>{len(valid)}/{len(watchlist)}</b></span></div>', unsafe_allow_html=True)
@@ -195,7 +206,7 @@ def watch_quote(item):
     else:
         quotes, errors, waiting = get_quotes()
         quote = quotes.get(item.key)
-    status = "合成演示" if demo else "更新中" if item.key in waiting else "更新失败 / 缓存" if item.key in errors or (quote and quote.stale) else "已公布净值" if item.market == "FUND" and quote else "行情快照" if quote else "暂不可用"
+    status = quote_status(quote, errors.get(item.key, ""), pending=item.key in waiting, demo=demo)
     stamp = time_label(quote.market_time or quote.fetched_at) if quote else ""
     color = "rise" if quote and quote.change_pct is not None and quote.change_pct >= 0 else "fall"
     value = f"{quote.price:,.3f}" if quote else "—"
@@ -291,7 +302,7 @@ with main_column:
         render_research(watchlist, active_item, service, demo, TODAY)
     else:
         st.markdown("### 数据与筛选方法")
-        st.markdown("境内股票/ETF 使用 AKShare 历史及东方财富报价；港美股使用 yfinance；场外基金使用已公布单位净值。报价可能延迟，获取时间不等于成交时间。")
+        st.markdown("股票/ETF 报价优先使用腾讯财经单证券快照，失败后尝试原东方财富 / Yahoo 通道；境内历史使用 AKShare，港美股历史使用 yfinance，场外基金使用已公布单位净值。报价可能延迟，源时间与获取时间不同，非交易时段保留最近可用报价。")
         st.markdown("**观察池范围：** 基础观察池 12 个产品，加当前自选。核心方向使用 ETF 作为市场代理；上涨/下跌数仅统计有效自选样本，不代表全市场。")
         st.markdown("**推荐口径：** 依据最近可用复权日线；信号价格显示截至日期。少于 30 个数据点、超过 7 个自然日未更新或请求失败回退的历史不入选。没有符合条件的产品时保持空缺。")
         st.markdown("**刷新与缓存：** 报价默认每 15 秒后台更新；行情失败保留原时间并标注。历史扫描独立后台进行，默认小时缓存，点击重新筛选主动更新。暂停行情不暂停历史任务进度。")

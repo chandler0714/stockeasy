@@ -13,6 +13,18 @@ def pct(value):
     return "—" if value is None else f"{value:+.2%}"
 
 
+def quote_status(quote, error="", pending=False, demo=False):
+    if demo:
+        return "合成演示"
+    if error or (quote and quote.stale):
+        status = "缓存 / 更新失败" if quote else "更新失败"
+        return status + (" · 重试中" if pending else " · 等待重试")
+    if quote:
+        status = "已公布净值" if getattr(quote, "kind", "") == "nav" else "报价快照"
+        return status + (" · 更新中" if pending else "")
+    return "更新中" if pending else "暂不可用"
+
+
 def time_label(value):
     if not value:
         return "成交时间未提供"

@@ -4,7 +4,7 @@ import json
 import sys
 
 from stockeasy.models import Instrument
-from stockeasy.providers import fetch_history, fetch_quote
+from stockeasy.providers import QuoteUnavailable, fetch_history, fetch_quote, safe_provider_error
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
             result = fetch_quote(instrument)
     except Exception as exc:
         # Do not echo server response bodies, proxy credentials or request URLs to the UI.
-        result = {"error": f"上游数据暂不可用（{type(exc).__name__}），可稍后重试或切换演示模式"}
+        result = {"error": str(exc) if isinstance(exc, QuoteUnavailable) else f"上游数据暂不可用：{safe_provider_error(exc)}；可稍后重试"}
     print("STOCKEASY_RESULT=" + json.dumps(result, ensure_ascii=False))
 
 

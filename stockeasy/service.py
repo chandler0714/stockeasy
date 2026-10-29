@@ -67,13 +67,14 @@ class MarketService:
         if cached and not force and age_seconds(cached.fetched_at) < max_age_seconds:
             return cached
         try:
-            values = self.provider.quote(instrument)
+            values = dict(self.provider.quote(instrument))
             if not math.isfinite(float(values["price"])) or float(values["price"]) <= 0:
                 raise ValueError("行情价格无效")
             previous = values.get("previous_close")
             if previous is not None and (not math.isfinite(float(previous)) or float(previous) <= 0):
                 values["previous_close"] = None
-            quote = QuoteResult(**values, source=source_name(instrument), fetched_at=utc_now())
+            actual_source = values.pop("source", source_name(instrument))
+            quote = QuoteResult(**values, source=actual_source, fetched_at=utc_now())
             self.store.save_quote(instrument.key, quote)
             return quote
         except Exception as exc:

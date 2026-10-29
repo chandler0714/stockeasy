@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 import time
 import unittest
+from unittest.mock import patch
+from concurrent.futures import Future
 
 import numpy as np
 import pandas as pd
@@ -20,6 +22,54 @@ def history(prices, volumes=None, stale=False, end=TODAY):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_quote_finishing_during_refresh_is_collected_before_replacement(self):
+        class FinishesBetweenChecks(Future):
+            def done(self):
+                if not super().done():
+                    self.set_exception(RuntimeError("prior request failed"))
+                    return False
+                return True
+
+        class Quotes:
+            def quote(self, *args, **kwargs):
+                return "replacement"
+
+        feed = QuoteFeed(Quotes(), workers=1)
+        try:
+            feed.tasks[ITEM.key] = (FinishesBetweenChecks(), 0)
+            with patch("stockeasy.feeds.time.monotonic", return_value=40):
+                feed.refresh([ITEM], interval=15)
+                self.assertIn("prior request failed", feed.snapshot()[1].get(ITEM.key, ""))
+        finally:
+            feed.close()
+
+    def test_failed_quote_waits_after_completion_before_automatic_retry(self):
+        class FailingQuotes:
+            calls = 0
+
+            def quote(self, instrument, **kwargs):
+                self.calls += 1
+                raise RuntimeError("source offline")
+
+        source = FailingQuotes()
+        feed = QuoteFeed(source, workers=1)
+        try:
+            with patch("stockeasy.feeds.time.monotonic", return_value=0) as now:
+                feed.refresh([ITEM], interval=15)
+                time.sleep(.03)
+                now.return_value = 40  # Long request completed after its interval.
+                self.assertIn(ITEM.key, feed.snapshot()[1])
+                now.return_value = 41
+                feed.refresh([ITEM], interval=15)
+                time.sleep(.03)
+                self.assertEqual(source.calls, 1)
+                self.assertIn(ITEM.key, feed.snapshot()[1])
+                feed.refresh([ITEM], interval=15, force=True)
+                time.sleep(.03)
+                self.assertEqual(source.calls, 2)
+        finally:
+            feed.close()
+
     def test_trend_reason_uses_measured_momentum(self):
         idea = assess(ITEM, history(np.linspace(100, 130, 60)), TODAY)
         self.assertIn("趋势延续", idea.categories)

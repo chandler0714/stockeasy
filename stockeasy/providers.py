@@ -1,9 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
 import io
 import json
+import math
+import re
 import subprocess
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -93,7 +96,106 @@ def fetch_history(instrument, start, end, adjust):
     return frame.loc[frame.date.between(pd.Timestamp(start), pd.Timestamp(end))].reset_index(drop=True)
 
 
+def tencent_symbol(instrument):
+    if instrument.market == "US":
+        return "us" + instrument.symbol.replace("-", ".")
+    if instrument.market == "HK":
+        return "hk" + instrument.symbol
+    if instrument.market == "ETF":
+        return ("sh" if instrument.symbol.startswith(("5", "6")) else "sz") + instrument.symbol
+    if instrument.market == "CN":
+        exchange = "bj" if instrument.symbol.startswith(("4", "8", "92")) else "sh" if instrument.symbol.startswith(("6", "9")) else "sz"
+        return exchange + instrument.symbol
+    raise ValueError("该市场不提供腾讯证券报价")
+
+
+def parse_tencent_quote(text, instrument):
+    remote = tencent_symbol(instrument)
+    match = re.search(r'(?:^|\s)v_' + re.escape(remote) + r'="([^"\r\n]*)";', text)
+    if not match:
+        raise ValueError("腾讯报价未返回请求的证券")
+    values = match.group(1).split("~")
+    if len(values) <= 30:
+        raise ValueError("腾讯报价字段不完整")
+    code = values[2]
+    if instrument.market == "US":
+        # E.g. SPY.AM, AAPL.OQ, BRK.B.N; keep share-class suffixes.
+        code = re.sub(r'\.(?:AM|OQ|N|O|A|PK|OTC)$', '', code)
+        expected = instrument.symbol.replace("-", ".")
+    else:
+        expected = instrument.symbol
+    if code != expected:
+        raise ValueError("腾讯报价证券代码不匹配")
+    price = float(values[3])
+    if not math.isfinite(price) or price <= 0:
+        raise ValueError("腾讯报价没有有效正价格")
+    try:
+        previous = float(values[4])
+        if not math.isfinite(previous) or previous <= 0:
+            previous = None
+    except ValueError:
+        previous = None
+    stamp = None
+    for pattern in ("%Y%m%d%H%M%S", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+        try:
+            stamp = datetime.strptime(values[30], pattern)
+            break
+        except ValueError:
+            continue
+    if stamp is None:
+        raise ValueError("腾讯报价缺少可识别的源时间")
+    zone = "America/New_York" if instrument.market == "US" else "Asia/Hong_Kong" if instrument.market == "HK" else "Asia/Shanghai"
+    return {"price": price, "previous_close": previous, "market_time": stamp.replace(tzinfo=ZoneInfo(zone)).isoformat(),
+            "kind": "snapshot", "source": "腾讯财经 · 报价快照"}
+
+
+def fetch_tencent_quote(instrument):
+    import requests
+    # This domestic public endpoint is reachable directly in the target
+    # environment; do not inherit an unrelated/broken overseas HTTP proxy.
+    with requests.Session() as session:
+        session.trust_env = False
+        response = session.get("https://qt.gtimg.cn/", params={"q": tencent_symbol(instrument)}, timeout=(3, 5))
+        response.raise_for_status()
+        response.encoding = "gb18030"
+        return parse_tencent_quote(response.text, instrument)
+
+
+def safe_provider_error(exc):
+    """Public diagnostic categories only; never echo URLs, bodies or credentials."""
+    import requests
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status == 429 or type(exc).__name__ == "YFRateLimitError":
+        return "请求被限流（HTTP 429）"
+    if isinstance(exc, (requests.Timeout, TimeoutError)):
+        return "连接或读取超时"
+    if isinstance(exc, requests.ConnectionError):
+        return "网络连接失败"
+    if status:
+        return f"接口返回 HTTP {int(status)}"
+    return "数据缺失或格式异常"
+
+
+class QuoteUnavailable(RuntimeError):
+    pass
+
+
 def fetch_quote(instrument):
+    if instrument.market == "FUND":
+        return fetch_original_quote(instrument)
+    try:
+        return fetch_tencent_quote(instrument)
+    except Exception as primary:
+        primary_reason = safe_provider_error(primary)
+    try:
+        result = fetch_original_quote(instrument)
+        result["source"] = source_name(instrument)
+        return result
+    except Exception as fallback:
+        raise QuoteUnavailable(f"腾讯报价：{primary_reason}；{source_name(instrument)}：{safe_provider_error(fallback)}。暂时没有新报价，稍后自动重试或点击更新。") from None
+
+
+def fetch_original_quote(instrument):
     if instrument.market in {"US", "HK"}:
         import yfinance as yf
         symbol = f"{int(instrument.symbol):04d}.HK" if instrument.market == "HK" else instrument.symbol
