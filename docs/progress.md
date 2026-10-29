@@ -11,3 +11,4 @@
 - Live probes: domestic stock/ETF daily data, domestic stock/ETF quotes, fund daily NAV successful. Yahoo query1/query2 returned 429; HK/US live availability is not claimed.
 - Delivery: README, local macOS launcher and GitHub Actions test template included. Public sync is explicitly authorized by the user.
 - Publishing credentials lack workflow scope; source will include docs/ci-tests.yml as a template rather than modifying access permissions. Local tests remain available.
+- Source successfully pushed to public main and app.py read back with the GitHub connector. Local preview is running at 127.0.0.1:8501; demo tab preserved for user inspection.

@@ -22,18 +22,20 @@
 ### Task 1: Data and analytics
 Files: stockeasy/models.py, providers.py, storage.py, service.py, analytics.py; tests/test_core.py.
 Interfaces: Instrument(key, symbol, name, market, currency); MarketService.history(instrument,start,end,adjust,force=False)->DataResult; MarketService.quote(instrument,force=False)->QuoteResult.
-- [ ] Write failing tests for normalization, return/drawdown, cache fallback, date/adjustment separation and watchlist persistence; run unittest and observe missing implementation.
-- [ ] Implement providers and bounded requests, SQLite persistence, cached retrieval, validated symbols and calculations.
-- [ ] Run core suite and record results.
+- [x] Write failing tests for normalization, return/drawdown, cache fallback, date/adjustment separation and watchlist persistence; run unittest and observe missing implementation.
+- [x] Implement providers and bounded requests, SQLite persistence, cached retrieval, validated symbols and calculations.
+- [x] Run core suite and record results.
 
 ### Task 2: Dashboard
 Files: app.py, stockeasy/demo.py, stockeasy/charts.py, .streamlit/config.toml, requirements.txt, tests/test_app.py.
-- [ ] Add failing Streamlit smoke tests for demo rendering and invalid symbol validation.
-- [ ] Implement sidebar settings, watchlist editor, quote cards, filtered watchlist, historical analysis, exports, refresh and explicit demo mode.
-- [ ] Verify with Streamlit AppTest and actual browser interactions/screenshots.
+- [x] Add failing Streamlit smoke tests for demo rendering and invalid symbol validation.
+- [x] Implement sidebar settings, watchlist editor, quote cards, filtered watchlist, historical analysis, exports, refresh and explicit demo mode.
+- [x] Verify with Streamlit AppTest and actual browser interactions/screenshots.
 
 ### Task 3: Delivery
-Files: README.md, .gitignore, .github/workflows/tests.yml, docs/verification.md.
-- [ ] Probe both upstream providers and document current connectivity without promising availability.
-- [ ] Run full test suite, review independently, inspect public file set for generated/private data.
-- [ ] Sync source to authorized public repository and verify remote file/commit; open local dashboard.
+Files: README.md, .gitignore, docs/ci-tests.yml, docs/verification.md.
+- [x] Probe both upstream providers and document current connectivity without promising availability.
+- [x] Run full test suite, review independently, inspect public file set for generated/private data.
+- [x] Sync source to authorized public repository and verify remote file/commit; open local dashboard.
+
+Delivery note: GitHub rejected workflow writes under current OAuth scope. Kept the configuration as docs/ci-tests.yml instead of requesting broader permissions. Source push to main succeeded and app.py was read back through the GitHub connector.
