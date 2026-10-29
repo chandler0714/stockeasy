@@ -33,7 +33,9 @@
 ### Task 3: Delivery
 - [x] Independent review, important fixes and regression verification.
 - [x] README/dependency notices, verification evidence and usable preview.
-- [ ] Public source sync and remote hash verification.
-- [ ] Final concise usage instructions plus WhaleQuant learning stages with source links.
+- [x] Public source sync and remote hash verification.
+- [x] Prepare concise usage instructions plus WhaleQuant learning stages with source links.
 
 Verification: 43 full-suite tests passed; pip check/compile/diff checks passed. Independent reviewer approved after the QuantStats extreme-return guard. Browser verified all three explicit-run flows and downloaded HTML; 1920px viewport has no horizontal overflow.
+
+Source release 94782b3cddc5d0118e783d948b804d3c401a5cf4 was pushed to origin/main and matched the remote hash. Browser also verified the recommended 1440px PC breakpoint without horizontal overflow; local screenshot is ignored by Git.
