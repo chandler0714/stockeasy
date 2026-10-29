@@ -51,6 +51,30 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertNotIn("ETF:510300", app.selectbox(key="selected_key").options)
 
+    def test_three_research_engines_run_in_demo(self):
+        app = AppTest.from_file(APP, default_timeout=40).run()
+        app.radio(key="workspace").set_value("量化研究").run()
+        self.assertEqual(len(app.exception), 0)
+        app.button(key="run_risk").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("QuantStats" in item.value for item in app.caption))
+        app.button(key="run_backtest").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("Backtesting.py" in item.value for item in app.caption))
+        app.button(key="run_portfolio").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("PyPortfolioOpt" in item.value for item in app.caption))
+        self.assertFalse(app.error)
+        self.assertTrue(any("配置权重" in item.label for item in app.get("download_button")))
+
+    def test_research_parameters_invalidate_old_result(self):
+        app = AppTest.from_file(APP, default_timeout=40).run()
+        app.radio(key="workspace").set_value("量化研究").run()
+        app.button(key="run_risk").click().run()
+        app.selectbox(key="risk_asset").set_value("ETF:518880").run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("参数已改变" in item.value for item in app.info))
+
     def test_beijing_midnight_rolls_header_and_daily_scan_forward(self):
         calls = 0
 

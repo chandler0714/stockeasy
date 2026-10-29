@@ -4,3 +4,7 @@ pandas>=2.2,<3
 plotly>=6,<7
 akshare>=1.18,<2
 yfinance>=0.2.65,<2
+quantstats>=0.0.86,<1
+backtesting>=0.6.6,<1
+PyPortfolioOpt>=1.6.0,<2
+matplotlib>=3.7,<4

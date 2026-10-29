@@ -67,7 +67,7 @@ if pending:
 
 with st.sidebar:
     st.markdown("### 工作空间")
-    workspace = st.radio("导航", ["今日工作台", "深度分析", "数据说明"], key="workspace", label_visibility="collapsed")
+    workspace = st.radio("导航", ["今日工作台", "深度分析", "量化研究", "数据说明"], key="workspace", label_visibility="collapsed")
     st.divider()
     st.markdown("### 数据设置")
     refresh_label = st.selectbox("行情自动刷新", ["暂停（手动刷新）", "每 5 秒", "每 15 秒", "每 30 秒", "每 60 秒", "每 120 秒", "每 300 秒"], index=2, key="refresh_interval_v2")
@@ -286,6 +286,9 @@ with main_column:
             render_history(active_item, service, demo, TODAY)
         else:
             st.info("请从右侧添加一个产品，再查看历史分析。")
+    elif workspace == "量化研究":
+        from stockeasy.research_panel import render_research
+        render_research(watchlist, active_item, service, demo, TODAY)
     else:
         st.markdown("### 数据与筛选方法")
         st.markdown("境内股票/ETF 使用 AKShare 历史及东方财富报价；港美股使用 yfinance；场外基金使用已公布单位净值。报价可能延迟，获取时间不等于成交时间。")
