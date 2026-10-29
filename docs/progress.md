@@ -17,3 +17,4 @@
 - Background quote feed and daily scanner keep failed/slow sources out of the render path. Data mode databases remain isolated.
 - Independent review fixes: paused feeds still collect in-flight work without scheduling repeats; midnight reruns update Beijing date and daily scan. Both covered by tests. Full suite: 31 passed.
 - Native Chrome 1920px layout verified; final spacing tightened after screenshot inspection. No new real-data availability claims.
+- PC implementation 5cdfa61 successfully synchronized to public main; preserved real-data preview. Direct GitHub upload stalled; existing local proxy was reachable and completed upload.

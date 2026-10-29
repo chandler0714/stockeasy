@@ -32,4 +32,6 @@
 
 ### Task 3: Delivery
 - [x] Independent review and regression fixes, documentation and screenshot.
-- [ ] Full suite and source-file checks; sync to public main; leave current preview accessible.
+- [x] Full suite and source-file checks; sync to public main; leave current preview accessible.
+
+Delivery: 31 tests passed; source implementation 5cdfa61 pushed to main. Native Chrome checked at 1920px, application preview preserved in real-data mode. GitHub direct connection stalled; successful upload used the existing, reachable local proxy without changing system settings.
