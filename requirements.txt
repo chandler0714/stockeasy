@@ -1,0 +1,6 @@
+streamlit>=1.66.1,<2
+numpy>=1.26,<3
+pandas>=2.2,<3
+plotly>=6,<7
+akshare>=1.18,<2
+yfinance>=0.2.65,<2
