@@ -31,7 +31,7 @@ def sparkline(prices, width=280, height=58):
     bottom, top = min(prices), max(prices)
     span = top - bottom or max(abs(top) * .01, 1)
     points = " ".join(f"{4 + i * (width - 8) / (len(prices) - 1):.1f},{height - 6 - (value - bottom) / span * (height - 12):.1f}" for i, value in enumerate(prices))
-    color = "#d77a83" if prices[-1] >= prices[0] else "#58a899"
+    color = "#ff8797" if prices[-1] >= prices[0] else "#55d6b2"
     return f'<svg width="100%" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="近{len(prices)}个数据点的价格走势"><polyline points="{points}" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 
 
