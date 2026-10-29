@@ -41,6 +41,16 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("ETF:159915", app.selectbox(key="selected_key").options)
         self.assertFalse(any(button.key == "discover_add_ETF:159915" for button in app.button))
 
+    def test_watchlist_view_and_remove_controls_work(self):
+        app = AppTest.from_file(APP, default_timeout=20).run()
+        app.button(key="watch_inspect_CN:600519").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.radio(key="workspace").value, "深度分析")
+        self.assertEqual(app.selectbox(key="selected_key").value, "CN:600519")
+        app.button(key="watch_remove_ETF:510300").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertNotIn("ETF:510300", app.selectbox(key="selected_key").options)
+
     def test_beijing_midnight_rolls_header_and_daily_scan_forward(self):
         calls = 0
 

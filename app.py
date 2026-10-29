@@ -189,6 +189,21 @@ def recommendations():
 
 
 @st.fragment(run_every=quote_poll_interval)
+def watch_quote(item):
+    if demo:
+        quote, errors, waiting = demo_quote(item, TODAY), {}, set()
+    else:
+        quotes, errors, waiting = get_quotes()
+        quote = quotes.get(item.key)
+    status = "合成演示" if demo else "更新中" if item.key in waiting else "更新失败 / 缓存" if item.key in errors or (quote and quote.stale) else "已公布净值" if item.market == "FUND" and quote else "行情快照" if quote else "暂不可用"
+    stamp = time_label(quote.market_time or quote.fetched_at) if quote else ""
+    color = "rise" if quote and quote.change_pct is not None and quote.change_pct >= 0 else "fall"
+    value = f"{quote.price:,.3f}" if quote else "—"
+    change = pct(quote.change_pct) if quote and quote.change_pct is not None else ""
+    detail = status + (f" · {stamp}" if stamp else "")
+    st.markdown(f'<div class="watch-quote"><div class="watch-price">{value}</div><div class="watch-change {color}">{change}</div><div class="watch-detail">{escape(detail)}</div></div>', unsafe_allow_html=True)
+
+
 def watch_rail():
     if beijing_day() != TODAY:
         st.rerun(scope="app")
@@ -197,25 +212,22 @@ def watch_rail():
         st.caption("关注变化，或发现下一个观察对象")
         candidates = available_candidates(watchlist)
         selected_tab, discover_tab = st.tabs([f"已选 {len(watchlist):02d}", f"发现 {len(candidates):02d}"])
-        quotes, errors, waiting = get_quotes()
         with selected_tab:
             if not watchlist:
                 st.info("暂无自选，请在发现列表或下方添加产品。")
-            with st.container(height=385, border=False):
+            with st.container(height=430, border=False):
                 for item in watchlist:
-                    quote = quotes.get(item.key)
-                    name, price, remove = st.columns([2, 1.25, .5], vertical_alignment="center")
-                    with name:
-                        if st.button(item.name, key=f"watch_inspect_{item.key}", type="tertiary"):
-                            action("inspect", item.key)
-                        st.caption(f"{item.symbol} · {item.currency}")
-                    with price:
-                        color = "rise" if quote and quote.change_pct is not None and quote.change_pct >= 0 else "fall"
-                        st.markdown(f'<div class="watch-price">{quote.price:,.3f}</div><div class="{color}" style="font-size:10px;text-align:right">{pct(quote.change_pct)}</div>' if quote else '<div class="watch-price">—</div>', unsafe_allow_html=True)
-                    if remove.button("−", key=f"watch_remove_{item.key}", help=f"移除 {item.name}"):
-                        action("remove", item.key)
-                    status = "合成演示" if demo else "更新中" if item.key in waiting else "更新失败 / 缓存" if item.key in errors or (quote and quote.stale) else "已公布净值" if item.market == "FUND" and quote else "行情快照" if quote else "暂不可用"
-                    st.caption(status + (f" · {time_label(quote.market_time or quote.fetched_at)}" if quote else ""))
+                    row_key = f"watch_row_{item.market}_{item.symbol.replace('-', '_')}"
+                    with st.container(key=row_key):
+                        name, price, remove = st.columns([2, 1.5, .65], vertical_alignment="top", gap="small")
+                        with name:
+                            if st.button(item.name, key=f"watch_inspect_{item.key}", type="tertiary", width="stretch"):
+                                action("inspect", item.key)
+                            st.caption(f"{item.symbol} · {item.currency}")
+                        with price:
+                            watch_quote(item)
+                        if remove.button("−", key=f"watch_remove_{item.key}", help=f"移除 {item.name}", width="stretch"):
+                            action("remove", item.key)
             with st.expander("批量管理"):
                 if watchlist:
                     st.selectbox("移除标的", [item.key for item in watchlist], key="remove_key")
