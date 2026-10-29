@@ -33,7 +33,7 @@ class DashboardTests(unittest.TestCase):
     def test_pc_dashboard_has_daily_ideas_and_candidate_actions(self):
         app = AppTest.from_file(APP, default_timeout=20).run()
         self.assertEqual(len(app.exception), 0)
-        self.assertTrue(any("当日推荐" in item.value for item in app.markdown))
+        self.assertTrue(any("今日观察信号" in item.value for item in app.markdown))
         self.assertTrue(any("我的自选" in item.value for item in app.markdown))
         self.assertTrue(any("风险观察" in item.value for item in app.markdown))
         app.button(key="discover_add_ETF:159915").click().run()

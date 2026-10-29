@@ -32,6 +32,9 @@ button{border-radius:7px!important;font-size:12px!important}
 .asset-name{font-size:17px;font-weight:650;color:#e4ecf7;line-height:1.5}.asset-symbol{font-size:11px;color:#a1b2cb;letter-spacing:.4px;line-height:1.6}
 .idea-numbers{display:flex;align-items:baseline;gap:10px;margin:5px 0 1px}.idea-price{font-size:25px;font-weight:650;letter-spacing:-.7px}.rise{color:#ff8797}.fall{color:#55d6b2}
 .tiny{font-size:11px;color:#a1b2cb;line-height:1.6}.reason{font-size:13px;line-height:1.8;color:#bac8db;margin-top:7px;min-height:43px}
+.reason-label{display:block;color:#95abc9;font-size:11px;margin-bottom:2px}
+.signal-meaning{background:#182a43;border-left:2px solid #7fa8ff;border-radius:6px;padding:10px 12px;margin:9px 0 12px;color:#c9d8eb;font-size:12px;line-height:1.8}
+.meaning-label{color:#a9c4ff;font-size:12px;font-weight:650;margin-bottom:3px}
 .risk-note{border-top:1px solid #2a3b55;padding-top:8px;margin-top:8px;color:#d5bb97;font-size:11px;line-height:1.6}
 .watch-item{padding:7px 0;border-bottom:1px solid #2a3b55;line-height:1.6}.watch-name{font-size:12px;font-weight:600;color:#d9e4f4}.watch-code{font-size:10px;color:#a1b2cb}.watch-price{font-size:14px;font-weight:600;text-align:right}.watch-status{font-size:9px;color:#a1b2cb}
 .coverage{display:flex;gap:20px;background:#121e30;border:1px solid #2a3b55;border-radius:9px;padding:12px 15px;font-size:11px;color:#a9b9cf;margin:5px 0 12px}.coverage b{color:#d9e4f4;font-size:16px;margin-right:3px}

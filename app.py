@@ -71,7 +71,7 @@ with st.sidebar:
     st.divider()
     st.markdown("### 数据设置")
     refresh_label = st.selectbox("行情自动刷新", ["暂停（手动刷新）", "每 5 秒", "每 15 秒", "每 30 秒", "每 60 秒", "每 120 秒", "每 300 秒"], index=1, key="refresh_interval_v3")
-    st.caption("报价默认每 5 秒轮询，上游响应慢时顺延；基金净值缓存至少 5 分钟，推荐依据日线筛选。")
+    st.caption("报价默认每 5 秒轮询，上游响应慢时顺延；基金净值缓存至少 5 分钟，观察信号依据日线筛选。")
     st.divider()
     st.caption("个人观察工作台\n\n本机存储 · 无交易接口\n\nPC 宽屏布局 / 建议 1440px+")
 
@@ -102,13 +102,19 @@ header, date_box = st.columns([5, 1.5], vertical_alignment="center")
 with header:
     st.markdown('<div class="eyebrow">MARKET DESK / 每日市场观察</div>', unsafe_allow_html=True)
     st.title("今日市场工作台")
-    st.markdown('<div class="hero-sub">用可解释的信号筛选产品，让价格、理由和风险出现在同一屏。</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">先看数据时间 → 再看市场涨跌 → 检查右侧自选 → 查看观察信号</div>', unsafe_allow_html=True)
 with date_box:
     st.markdown(f'<div class="date-chip">{TODAY:%Y.%m.%d}　 /　PC 工作台</div>', unsafe_allow_html=True)
 if demo:
-    st.warning("演示模式 · 以下价格、推荐信号与图表均为合成数据。关闭左侧开关后接入真实数据。")
+    st.warning("演示模式 · 以下价格、观察信号与图表均为合成数据。关闭左侧开关后接入真实数据。")
 else:
-    st.caption("免费来源可能延迟或不可用；当日推荐是观察池内的规则筛选，依据最近可用日线，不是全市场排名或收益预测。")
+    st.caption("免费来源可能延迟或不可用；观察信号依据最近可用日线，卡片标明数据日期和触发原因。")
+
+if workspace == "今日工作台":
+    with st.expander("第一次用？两分钟读懂看板"):
+        st.markdown("**每天按这四步看：**\n\n1. **先看时间。** 查看卡片下方的源时间；出现更新失败时展开「行情来源与刷新状态」。美股源时间可能对应上一交易日。\n2. **再看市场。** 核心资产用 ETF 观察几类资产方向，优先看涨跌幅。各产品的币种和源时间可能不同。\n3. **检查自选。** 右侧点击产品名称进入深度分析，先比较近一个月与近一年的走势。\n4. **查看信号。** 依次读「触发依据 → 这条信息说明什么 → 观察风险」，再决定是否加入自选继续观察。")
+        st.markdown("**先读懂这三个数：**\n\n- **报价涨跌幅**：相对前一交易日收盘价的变化；场外基金比较最近两次公布的单位净值。\n- **卡片近20日变化**：最新日线价格与往前数20条有效记录的价格相比，时间范围与报价涨跌幅不同。\n- **最大回撤**：在所选历史区间中，从高点跌到随后低点的最大幅度，可在深度分析中查看。")
+        st.caption("报价按所选秒数轮询；观察信号依据日线，查看各卡片的截至日期。信号表示触发了一条观察规则，不代表买入建议。量化研究可在熟悉这些信息后再使用。")
 
 main_column, rail_column = st.columns([3.35, 1.15], gap="large")
 
@@ -151,20 +157,21 @@ def recommendations():
     if beijing_day() != TODAY:
         st.rerun(scope="app")
     title, refresh = st.columns([4, 1])
-    title.markdown("### 当日推荐")
+    title.markdown("### 今日观察信号")
     force = refresh.button("重新筛选", key="rescan", width="stretch")
     results, errors, pending_count = scan_snapshot(force)
     report = build_report(results, TODAY)
     total = len(universe(watchlist))
+    st.caption("表示产品触发了观察规则。先读触发依据和通俗解释，再点开走势核查。")
     st.caption(f"观察池 {total} 个 · 可评估 {report.eligible} 个 · 后台加载 {pending_count} 个　/　日线筛选，不构成收益预测")
     if pending_count:
         st.progress((total - pending_count) / total, text="正在后台获取日线，已完成的产品先展示")
-    category = st.segmented_control("推荐理由", ["全部"] + list(CATEGORIES), default="全部", key="idea_category", label_visibility="collapsed") or "全部"
+    category = st.segmented_control("信号类型", ["全部"] + list(CATEGORIES), default="全部", key="idea_category", label_visibility="collapsed") or "全部"
     ideas = [idea for idea in report.ideas if category == "全部" or category in idea.categories]
     if not ideas and pending_count:
         st.info("正在后台筛选，符合条件的产品会自动出现；其他区域可以继续操作。")
     elif not ideas:
-        st.info("当前没有符合条件的产品。数据不足、过期或更新失败的记录不会强行推荐。")
+        st.info("当前没有符合条件的观察信号。数据不足、过期或更新失败的记录暂不评估。")
     shown_categories = set()
     for offset in range(0, min(len(ideas), 6), 2):
         for column, idea in zip(st.columns(2), ideas[offset:offset + 2]):
@@ -194,7 +201,7 @@ def recommendations():
                 st.caption(f"{key}：{reason}")
             if excluded:
                 st.caption("暂不评估包括少于 30 个有效日线数据点、价格日期超过 7 个自然日、未来日期或缓存刷新失败。")
-    with st.expander("这些产品为什么入选？"):
+    with st.expander("这四类信号如何理解？"):
         st.markdown("**趋势延续：** 20 日涨幅 >2%，价格高于向上的 20 日均线。**量能变化：** 最新成交量 ≥ 前 20 日均量的 1.5 倍。**回撤修复：** 距近 60 日高点仍跌 ≥5%，近 5 日回升 ≥1.5%。**低波动：** 近 60 日年化波动 <18%、当前回撤 <8%。")
         st.caption("筛选使用前复权 / Yahoo 复权日线，场外基金使用单位净值；少于 60 日时使用可用记录。规则仅帮助观察，放量不等于上涨，低波动不等于低风险。价格截止日可能早于今天。")
 
@@ -220,7 +227,7 @@ def watch_rail():
         st.rerun(scope="app")
     with st.container(key="watch_rail"):
         st.markdown("### 我的自选")
-        st.caption("关注变化，或发现下一个观察对象")
+        st.caption("点击产品名称看历史；在「发现」中添加观察对象")
         candidates = available_candidates(watchlist)
         selected_tab, discover_tab = st.tabs([f"已选 {len(watchlist):02d}", f"发现 {len(candidates):02d}"])
         with selected_tab:
@@ -273,7 +280,7 @@ def watch_rail():
                         st.rerun(scope="app")
                 except ValueError as exc:
                     st.error(str(exc))
-        st.caption("自选保存在本机。发现列表为固定观察池，不代表已获推荐。")
+        st.caption("自选保存在本机。发现列表为固定观察池，不表示已触发观察信号。")
 
 
 selected_items = {item.key: item for item in watchlist}
@@ -304,7 +311,7 @@ with main_column:
         st.markdown("### 数据与筛选方法")
         st.markdown("股票/ETF 报价优先使用腾讯财经单证券快照，失败后尝试原东方财富 / Yahoo 通道；境内历史使用 AKShare，港美股历史使用 yfinance，场外基金使用已公布单位净值。报价可能延迟，源时间与获取时间不同，非交易时段保留最近可用报价。")
         st.markdown("**观察池范围：** 基础观察池 12 个产品，加当前自选。核心方向使用 ETF 作为市场代理；上涨/下跌数仅统计有效自选样本，不代表全市场。")
-        st.markdown("**推荐口径：** 依据最近可用复权日线；信号价格显示截至日期。少于 30 个数据点、超过 7 个自然日未更新或请求失败回退的历史不入选。没有符合条件的产品时保持空缺。")
+        st.markdown("**观察信号口径：** 依据最近可用复权日线；信号价格显示截至日期。少于 30 个数据点、超过 7 个自然日未更新或请求失败回退的历史不入选。没有符合条件的产品时保持空缺。")
         st.markdown("**刷新与缓存：** 股票/ETF 报价默认每 5 秒后台轮询，慢请求顺延，失败后至少等待 30 秒；场外基金净值至少缓存 5 分钟，可手动更新。行情失败保留原时间并标注。历史扫描独立后台进行，默认小时缓存，点击重新筛选主动更新。暂停行情不暂停历史任务进度。")
         st.markdown("**本地数据：** 真实数据与合成演示数据隔离。自选和缓存位于本机 data/ 目录，不随源码上传；无交易或券商账户接口。")
 
