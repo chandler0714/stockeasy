@@ -13,3 +13,7 @@
 - Publishing credentials lack workflow scope; source will include docs/ci-tests.yml as a template rather than modifying access permissions. Local tests remain available.
 - Source successfully pushed to public main and app.py read back with the GitHub connector. Local preview is running at 127.0.0.1:8501; demo tab preserved for user inspection.
 - Follow-up: user requested automatic live viewing. Default now 15-second fragment refresh, with 5/30/60/120/300-second options and pause; quote cache lifetime follows the chosen interval. History analysis stays outside the auto-refresh fragment. Added regression tests for the default/pause controls and cache interval.
+- PC dashboard: central daily rule-based ideas with reasons/trends/source/as-of, ETF proxy overview and sample breadth/risk indicators; right selected/discovery rail with add/remove/inspect. Core provider/cache model retained.
+- Background quote feed and daily scanner keep failed/slow sources out of the render path. Data mode databases remain isolated.
+- Independent review fixes: paused feeds still collect in-flight work without scheduling repeats; midnight reruns update Beijing date and daily scan. Both covered by tests. Full suite: 31 passed.
+- Native Chrome 1920px layout verified; final spacing tightened after screenshot inspection. No new real-data availability claims.

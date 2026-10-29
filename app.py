@@ -1,288 +1,288 @@
-from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from html import escape
 import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import streamlit as st
 
-from stockeasy.analytics import summarize
-from stockeasy.charts import performance_chart, price_chart
 from stockeasy.demo import demo_history, demo_quote
+from stockeasy.desktop_style import CSS
+from stockeasy.discovery import BENCHMARKS, CATALOG, CATEGORIES, HistoryScanner, available_candidates, build_report, universe
+from stockeasy.feeds import QuoteFeed
+from stockeasy.history_panel import render_history
 from stockeasy.models import Instrument, MARKETS
+from stockeasy.presentation import beijing_day, idea_html, pct, time_label
 from stockeasy.service import MarketService
 from stockeasy.storage import Store
 
-st.set_page_config(page_title="Stockeasy · 看见市场，读懂趋势", page_icon="↗", layout="wide")
-
-st.markdown("""<style>
-html, body, [class*="css"], .stApp {font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;}
-.block-container {padding-top:2.1rem;padding-bottom:2rem;max-width:1540px;}
-[data-testid="stHeader"] {background:transparent;}
-[data-testid="stSidebar"] {background:#101e36;min-width:270px;max-width:270px;}
-[data-testid="stSidebar"] * {color:#d5ddeb;}
-[data-testid="stSidebar"] h3 {font-size:13px;letter-spacing:.07em;color:#8395b3;}
-[data-testid="stSidebar"] [data-baseweb="select"] > div,
-[data-testid="stSidebar"] input {background:#1b2c48;color:#eff3ff;}
-[data-testid="stSidebar"] [data-testid="stForm"] {border-color:#2b3d59;}
-[data-testid="stSidebar"] button {background:#1c3051;border-color:#304766;}
-[data-testid="stSidebar"] button[kind="primaryFormSubmit"] {background:#3564eb;border-color:#3564eb;}
-[data-testid="stSidebar"] hr {border-color:#2b3d59;}
-[data-testid="stMetric"] {background:#fff;border:1px solid #e7ecf4;border-radius:12px;padding:18px 20px;}
-[data-testid="stMetricLabel"] {color:#768399;font-size:12px;}
-[data-testid="stMetricValue"] {font-size:27px;font-weight:600;letter-spacing:-.04em;}
-div[data-testid="stVerticalBlockBorderWrapper"] > div {border-radius:12px;border-color:#e7ecf4!important;}
-h1 {font-size:29px!important;font-weight:650!important;letter-spacing:-.045em;padding-top:4px!important;}
-h2 {font-size:19px!important;letter-spacing:-.02em;}
-h3 {font-size:16px!important;}
-[data-testid="stTabs"] button {font-size:14px;padding:12px 18px;}
-[data-testid="stDataFrame"] {border-radius:9px;overflow:hidden;}
-.eyebrow {font-size:10px;letter-spacing:2.4px;color:#8d9ab0;font-weight:700;}
-.brand {font-size:27px;letter-spacing:-1px;color:white!important;font-weight:700;margin:4px 0 3px;}
-.brand span {color:#7da0ff!important;}
-.brand-sub {font-size:10px;color:#8497b5!important;letter-spacing:2.5px;margin-bottom:32px;}
-.source-label {font-size:11px;color:#8390a5;line-height:1.8;}
-.pill {display:inline-block;background:#eaf0ff;color:#3564eb;border-radius:6px;padding:5px 10px;font-size:11px;}
-.hero-note {color:#8390a5;font-size:13px;}
-.footer {font-size:11px;color:#95a0b2;border-top:1px solid #e3e9f2;margin-top:20px;padding-top:16px;}
-[data-testid="stAlert"] {border-radius:9px;}
-</style>""", unsafe_allow_html=True)
-
+st.set_page_config(page_title="Stockeasy · PC 市场工作台", page_icon="↗", layout="wide")
+st.markdown(CSS, unsafe_allow_html=True)
+TODAY = beijing_day()
 DATA_DIR = Path(os.environ.get("STOCKEASY_DATA_DIR", Path(__file__).parent / "data"))
-TODAY = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-demo_default = os.environ.get("STOCKEASY_DEMO") == "1" or st.query_params.get("demo") == "1"
 
 
-def timestamp_label(value):
-    if not value:
-        return "数据源未提供成交时间"
-    try:
-        parsed = datetime.fromisoformat(value)
-        if len(value) == 10:
-            return value
-        return parsed.strftime("%m-%d %H:%M %Z") + (f" UTC{parsed.strftime('%z')}" if parsed.tzinfo else "")
-    except ValueError:
-        return value
+@st.cache_resource
+def real_runtime(path):
+    service = MarketService(Store(Path(path)))
+    return service, HistoryScanner(service), QuoteFeed(service)
 
 
-def percent(value):
-    return "—" if value is None else f"{value:+.2%}"
+@st.cache_data(ttl=3600, show_spinner=False)
+def demo_results(items, today):
+    return {item.key: (item, demo_history(item, today - timedelta(days=160), today)) for item in items}
+
+
+def action(kind, key):
+    st.session_state.pending_action = (kind, key)
+    st.rerun(scope="app")
 
 
 with st.sidebar:
-    st.markdown('<div class="brand">↗ stock<span>easy</span></div><div class="brand-sub">A LITTLE CLARITY. EVERY DAY.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand">↗ stock<span>easy</span></div><div class="brand-sub">YOUR MARKET WORKSPACE</div>', unsafe_allow_html=True)
+    demo = st.toggle("演示模式", value=os.environ.get("STOCKEASY_DEMO") == "1" or st.query_params.get("demo") == "1", key="demo_mode")
+    st.caption("合成数据 / 仅供界面体验" if demo else "AKShare + yfinance")
+
+store = Store(DATA_DIR / ("demo.sqlite" if demo else "market.sqlite"))
+watchlist = store.watchlist()
+pending = st.session_state.pop("pending_action", None)
+if pending:
+    kind, key = pending
+    by_catalog = {item.key: item for item in universe(watchlist)}
+    if kind == "add" and key in by_catalog:
+        if key not in {item.key for item in watchlist} and len(watchlist) < 20:
+            watchlist.append(by_catalog[key])
+            store.save_watchlist(watchlist)
+    elif kind == "remove":
+        watchlist = [item for item in watchlist if item.key != key]
+        store.save_watchlist(watchlist)
+        if st.session_state.get("inspection_key") == key:
+            st.session_state.pop("inspection_key", None)
+        if st.session_state.get("selected_key") == key:
+            st.session_state.pop("selected_key", None)
+    elif kind == "inspect" and key in by_catalog:
+        st.session_state.inspection_key = key
+        st.session_state.selected_key = key
+        st.session_state.workspace = "深度分析"
+
+with st.sidebar:
     st.markdown("### 工作空间")
-    st.markdown("**◉　市场观察**")
-    st.caption("自选行情 · 历史分析 · 数据导出")
+    workspace = st.radio("导航", ["今日工作台", "深度分析", "数据说明"], key="workspace", label_visibility="collapsed")
     st.divider()
-    demo = st.toggle("演示模式", value=demo_default, key="demo_mode", help="使用合成数据预览界面，不代表真实行情。")
-    st.caption("合成数据，仅用于预览" if demo else "AKShare + yfinance · 真实数据")
-
-    # Separate files keep both data and watchlist state isolated across modes.
-    store = Store(DATA_DIR / ("demo.sqlite" if demo else "market.sqlite"))
-    watchlist = store.watchlist()
-
-    st.markdown("### 自选管理")
-    with st.form("add_form", clear_on_submit=False):
-        st.selectbox("市场", list(MARKETS), format_func=lambda key: MARKETS[key], key="new_market")
-        st.text_input("证券代码", placeholder="600519 / 00700 / AAPL", key="new_symbol", max_chars=20)
-        st.text_input("显示名称（可选）", placeholder="给自选一个名字", key="new_name", max_chars=40)
-        submitted = st.form_submit_button("＋ 添加自选", width="stretch", key="add_watch")
-    if submitted:
-        try:
-            item = Instrument.create(st.session_state.new_market, st.session_state.new_symbol, st.session_state.new_name)
-            if item.key in {instrument.key for instrument in watchlist}:
-                st.info("该标的已在自选列表中")
-            elif len(watchlist) >= 20:
-                st.error("首版最多支持 20 个自选，请先移除不需要的标的")
-            else:
-                store.save_watchlist(watchlist + [item])
-                st.rerun()
-        except ValueError as exc:
-            st.error(str(exc))
-    if watchlist:
-        with st.expander("管理已有自选"):
-            st.selectbox("移除标的", [item.key for item in watchlist], key="remove_key")
-            if st.button("移除自选", key="remove_watch", width="stretch"):
-                store.save_watchlist([item for item in watchlist if item.key != st.session_state.remove_key])
-                st.session_state.pop("selected_key", None)
-                st.rerun()
-    st.divider()
+    st.markdown("### 数据设置")
     refresh_label = st.selectbox("行情自动刷新", ["暂停（手动刷新）", "每 5 秒", "每 15 秒", "每 30 秒", "每 60 秒", "每 120 秒", "每 300 秒"], index=2, key="refresh_interval_v2")
-    st.caption("默认自动刷新行情；上游响应慢时会顺延。数据可能延迟，基金净值按日公布。")
-    st.markdown('<div class="source-label">数据保存在本机<br>无需密钥 · 不连接交易账户</div>', unsafe_allow_html=True)
+    st.caption("行情自动更新；推荐依据日线筛选。上游响应慢时顺延。")
+    st.divider()
+    st.caption("个人观察工作台\n\n本机存储 · 无交易接口\n\nPC 宽屏布局 / 建议 1440px+")
 
-head, badge = st.columns([5, 1.6], vertical_alignment="center")
-with head:
-    st.markdown('<div class="eyebrow">MARKET WORKSPACE / 市场观察</div>', unsafe_allow_html=True)
-    st.title("自选行情与历史分析")
-    st.markdown('<div class="hero-note">从当下价格，到长期趋势。把关注的市场放在一起。</div>', unsafe_allow_html=True)
-with badge:
-    st.markdown(f'<span class="pill">{TODAY:%Y.%m.%d}　·　{len(watchlist):02d} 个自选</span>', unsafe_allow_html=True)
-if demo:
-    st.warning("演示模式 · 当前价格与图表均为合成数据，仅供体验界面。关闭左侧「演示模式」后接入真实数据。")
-else:
-    st.caption("免费数据可能延迟或暂不可用；A 股为上游报价快照，港美股为最近一分钟数据，基金为已公布净值。")
-
-if not watchlist:
-    st.info("自选列表为空，请从左侧添加股票、ETF 或基金。")
-    st.stop()
-
+interval = None if refresh_label.startswith("暂停") else int(refresh_label.split()[1])
+quote_poll_interval = 2  # Collect finished background results without rescheduling paused feeds.
 service = MarketService(store)
-interval = None if refresh_label == "暂停（手动刷新）" else int(refresh_label.split()[1])
+if not demo:
+    service, scanner, feed = real_runtime(str(store.path))
+    scanner.start(universe(watchlist), TODAY)
+quote_items = list({item.key: item for item in watchlist + BENCHMARKS}.values())
 
 
-@st.fragment(run_every=interval)
-def quote_panel():
-    left, right = st.columns([6, 1])
-    with left:
-        st.markdown("### 自选快照")
-    with right:
-        force = st.button("↻ 刷新行情", key="refresh_quotes", width="stretch")
-    quotes, errors = {}, {}
+def get_quotes(force=False):
+    if demo:
+        return {item.key: demo_quote(item, TODAY) for item in quote_items}, {}, set()
+    feed.refresh(quote_items, interval=interval or 60, force=force, paused=interval is None)
+    return feed.snapshot()
 
-    def load(item):
-        try:
-            return item.key, demo_quote(item, TODAY) if demo else service.quote(item, force=force, max_age_seconds=interval or 60), None
-        except Exception as exc:
-            return item.key, None, str(exc)
 
-    with st.spinner("正在获取行情，首次连接可能需要片刻…"):
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            for key, quote, error in pool.map(load, watchlist):
-                if quote is not None:
-                    quotes[key] = quote
-                else:
-                    errors[key] = error
-    checked_at = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M:%S")
-    refresh_status = f"自动刷新中 · 每 {interval} 秒" if interval else "自动刷新已暂停 · 可点击刷新行情"
-    st.caption(f"{refresh_status}　·　最近检查 {checked_at}（北京时间）")
-    cards = st.columns(min(4, len(watchlist)))
-    for column, item in zip(cards, watchlist[:4]):
+def scan_snapshot(force=False):
+    if demo:
+        return demo_results(tuple(universe(watchlist)), TODAY), {}, 0
+    scanner.start(universe(watchlist), TODAY, force=force)
+    return scanner.snapshot()
+
+
+header, date_box = st.columns([5, 1.5], vertical_alignment="center")
+with header:
+    st.markdown('<div class="eyebrow">MARKET DESK / 每日市场观察</div>', unsafe_allow_html=True)
+    st.title("今日市场工作台")
+    st.markdown('<div class="hero-sub">用可解释的信号筛选产品，让价格、理由和风险出现在同一屏。</div>', unsafe_allow_html=True)
+with date_box:
+    st.markdown(f'<div class="date-chip">{TODAY:%Y.%m.%d}　 /　PC 工作台</div>', unsafe_allow_html=True)
+if demo:
+    st.warning("演示模式 · 以下价格、推荐信号与图表均为合成数据。关闭左侧开关后接入真实数据。")
+else:
+    st.caption("免费来源可能延迟或不可用；当日推荐是观察池内的规则筛选，依据最近可用日线，不是全市场排名或收益预测。")
+
+main_column, rail_column = st.columns([3.35, 1.15], gap="large")
+
+
+@st.fragment(run_every=quote_poll_interval)
+def overview():
+    if beijing_day() != TODAY:
+        st.rerun(scope="app")
+    title, refresh = st.columns([4, 1])
+    title.markdown("### 核心资产方向")
+    force = refresh.button("↻ 更新行情", key="refresh_quotes", width="stretch")
+    quotes, errors, waiting = get_quotes(force)
+    for column, item in zip(st.columns(4), BENCHMARKS):
         quote = quotes.get(item.key)
         with column:
-            st.metric(f"{item.name} · {item.symbol}", f"{quote.price:,.3f}" if quote else "—",
-                      percent(quote.change_pct) if quote and quote.change_pct is not None else None, delta_color="inverse")
-            st.caption(f"{item.currency} · " + ("缓存 · 刷新失败" if quote and quote.stale else "合成演示" if demo else "已公布净值" if item.market == "FUND" else "行情快照" if quote else "连接暂不可用"))
-    filter_market = st.segmented_control("按市场筛选", ["全部"] + list(dict.fromkeys(MARKETS[item.market] for item in watchlist)),
-                                         default="全部", key="market_filter", label_visibility="collapsed")
-    rows = []
-    for item in watchlist:
-        if filter_market not in (None, "全部", MARKETS[item.market]):
-            continue
-        quote = quotes.get(item.key)
-        kind = {"nav": "已公布净值", "minute": "分钟行情 · 可能延迟", "quote": "报价快照", "demo": "合成演示"}
-        rows.append({"名称": item.name, "代码": item.symbol, "市场": MARKETS[item.market], "币种": item.currency,
-                     "最新价格": quote.price if quote else None,
-                     "涨跌幅 %": round(quote.change_pct * 100, 2) if quote and quote.change_pct is not None else None,
-                     "状态": "缓存 · 刷新失败" if quote and quote.stale else kind[quote.kind] if quote else "暂不可用",
-                     "行情时间": timestamp_label(quote.market_time) if quote else "—",
-                     "获取时间（北京）": datetime.fromisoformat(quote.fetched_at).astimezone(ZoneInfo("Asia/Shanghai")).strftime("%m-%d %H:%M:%S") if quote else "—"})
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
-                 column_config={"最新价格": st.column_config.NumberColumn(format="%.3f"), "涨跌幅 %": st.column_config.NumberColumn(format="%+.2f%%")}, height="auto")
-    if errors or any(quote.stale for quote in quotes.values()):
-        with st.expander("部分行情获取失败 · 查看详情", expanded=not quotes):
-            for item in watchlist:
-                error = errors.get(item.key) or (quotes[item.key].error if item.key in quotes and quotes[item.key].stale else "")
-                if error:
-                    st.caption(f"{item.name}（{item.symbol}）：{error}")
-            st.info("可以稍后刷新，或打开左侧演示模式预览完整界面。缓存会保留原始获取时间。")
+            st.metric(item.name, f"{quote.price:,.3f}" if quote else "—", pct(quote.change_pct) if quote and quote.change_pct is not None else None, delta_color="inverse")
+            status = "合成演示" if demo else "更新中" if item.key in waiting else "缓存 / 更新失败" if item.key in errors or (quote and quote.stale) else "报价快照" if quote else "暂不可用"
+            st.caption(f"{item.currency} · {status}")
+    checked = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M:%S")
+    status = f"自动刷新中 · 每 {interval} 秒" if interval else "自动刷新已暂停"
+    st.caption(f"{status}　·　界面更新 {checked}（北京时间）　·　ETF 代理行情，非指数点位")
+    valid = [q for key, q in quotes.items() if key in {item.key for item in watchlist} and key not in errors and not q.stale and q.change_pct is not None]
+    up, down = sum(q.change_pct > 0 for q in valid), sum(q.change_pct < 0 for q in valid)
+    st.markdown(f'<div class="coverage"><span>自选样本上涨 <b>{up}</b></span><span>下跌 <b>{down}</b></span><span>有效报价 <b>{len(valid)}/{len(watchlist)}</b></span></div>', unsafe_allow_html=True)
 
 
-quote_panel()
-st.markdown("")
-analysis_tab, data_tab, about_tab = st.tabs(["走势与分析", "历史数据", "数据说明"])
-
-with analysis_tab:
-    selection, range_column, adjust_column = st.columns([2.2, 1.6, 1.4])
-    by_key = {item.key: item for item in watchlist}
-    if st.session_state.get("selected_key") not in by_key:
-        st.session_state.selected_key = watchlist[0].key
-    with selection:
-        selected = st.selectbox("分析标的", list(by_key), key="selected_key")
-        item = by_key[selected]
-        st.caption(f"{item.name} · {MARKETS[item.market]} · {item.currency}")
-    with range_column:
-        period = st.selectbox("时间范围", ["近 1 个月", "近 3 个月", "近 6 个月", "近 1 年", "近 3 年", "自定义"], index=3, key="history_period")
-    with adjust_column:
-        adjustments = {"原始价格": "raw", "前复权": "qfq", "后复权": "hfq"} if item.market in {"CN", "ETF"} else {"原始价格": "raw", "Yahoo 复权": "qfq"} if item.market in {"HK", "US"} else {"单位净值": "raw"}
-        adjustment = st.selectbox("价格口径", list(adjustments), key=f"adjust_{item.market}")
-        adjust = adjustments[adjustment]
-    if period == "自定义":
-        start_col, end_col = st.columns(2)
-        start = start_col.date_input("开始日期", TODAY - timedelta(days=365), max_value=TODAY)
-        end = end_col.date_input("结束日期", TODAY, max_value=TODAY)
+@st.fragment(run_every=15)
+def recommendations():
+    if beijing_day() != TODAY:
+        st.rerun(scope="app")
+    title, refresh = st.columns([4, 1])
+    title.markdown("### 当日推荐")
+    force = refresh.button("重新筛选", key="rescan", width="stretch")
+    results, errors, pending_count = scan_snapshot(force)
+    report = build_report(results, TODAY)
+    total = len(universe(watchlist))
+    st.caption(f"观察池 {total} 个 · 可评估 {report.eligible} 个 · 后台加载 {pending_count} 个　/　日线筛选，不构成收益预测")
+    if pending_count:
+        st.progress((total - pending_count) / total, text="正在后台获取日线，已完成的产品先展示")
+    category = st.segmented_control("推荐理由", ["全部"] + list(CATEGORIES), default="全部", key="idea_category", label_visibility="collapsed") or "全部"
+    ideas = [idea for idea in report.ideas if category == "全部" or category in idea.categories]
+    if not ideas and pending_count:
+        st.info("正在后台筛选，符合条件的产品会自动出现；其他区域可以继续操作。")
+    elif not ideas:
+        st.info("当前没有符合条件的产品。数据不足、过期或更新失败的记录不会强行推荐。")
+    shown_categories = set()
+    for offset in range(0, min(len(ideas), 6), 2):
+        for column, idea in zip(st.columns(2), ideas[offset:offset + 2]):
+            with column:
+                label = category if category != "全部" else next((name for name in idea.categories if name not in shown_categories), idea.categories[0])
+                shown_categories.add(label)
+                st.markdown(idea_html(idea, label), unsafe_allow_html=True)
+                inspect, add = st.columns([1.2, 1])
+                if inspect.button("查看走势 ↗", key=f"idea_inspect_{idea.instrument.key}", width="stretch"):
+                    action("inspect", idea.instrument.key)
+                selected = idea.instrument.key in {item.key for item in watchlist}
+                if add.button("✓ 已在自选" if selected else "＋ 加入自选", key=f"idea_add_{idea.instrument.key}", disabled=selected or len(watchlist) >= 20, width="stretch"):
+                    action("add", idea.instrument.key)
+    st.markdown("### 风险观察")
+    st.caption("同一观察池的日线风险信号；不是实时预警。")
+    if report.risks:
+        for alert in report.risks[:4]:
+            st.markdown(f'<div class="risk-row"><b>{escape(alert.instrument.name)}</b>　{escape(alert.reason)} <span class="tiny">/ 截至 {alert.as_of}</span></div>', unsafe_allow_html=True)
+    elif report.eligible:
+        st.info("当前已评估样本未触发回撤 ≥15% 或年化波动 ≥35% 的观察阈值；未加载数据不代表没有风险。")
     else:
-        days = {"近 1 个月": 30, "近 3 个月": 90, "近 6 个月": 180, "近 1 年": 365, "近 3 年": 1095}[period]
-        start, end = TODAY - timedelta(days=days), TODAY
-    refresh_history = st.button("更新历史数据", key="refresh_history", help="重新连接上游，补齐最近交易日的数据。")
-    result = None
-    if start > end:
-        st.error("开始日期不能晚于结束日期，请调整日期。")
+        st.info("暂无可评估的日线，暂不判断风险。等待加载完成，或查看下方数据覆盖说明。")
+    excluded = len(results) - report.eligible
+    if errors or excluded:
+        with st.expander(f"数据覆盖说明 · {len(errors)} 个连接失败 / {excluded} 个暂不评估"):
+            for key, reason in errors.items():
+                st.caption(f"{key}：{reason}")
+            if excluded:
+                st.caption("暂不评估包括少于 30 个有效日线数据点、价格日期超过 7 个自然日、未来日期或缓存刷新失败。")
+    with st.expander("这些产品为什么入选？"):
+        st.markdown("**趋势延续：** 20 日涨幅 >2%，价格高于向上的 20 日均线。**量能变化：** 最新成交量 ≥ 前 20 日均量的 1.5 倍。**回撤修复：** 距近 60 日高点仍跌 ≥5%，近 5 日回升 ≥1.5%。**低波动：** 近 60 日年化波动 <18%、当前回撤 <8%。")
+        st.caption("筛选使用前复权 / Yahoo 复权日线，场外基金使用单位净值；少于 60 日时使用可用记录。规则仅帮助观察，放量不等于上涨，低波动不等于低风险。价格截止日可能早于今天。")
+
+
+@st.fragment(run_every=quote_poll_interval)
+def watch_rail():
+    if beijing_day() != TODAY:
+        st.rerun(scope="app")
+    with st.container(key="watch_rail"):
+        st.markdown("### 我的自选")
+        st.caption("关注变化，或发现下一个观察对象")
+        candidates = available_candidates(watchlist)
+        selected_tab, discover_tab = st.tabs([f"已选 {len(watchlist):02d}", f"发现 {len(candidates):02d}"])
+        quotes, errors, waiting = get_quotes()
+        with selected_tab:
+            if not watchlist:
+                st.info("暂无自选，请在发现列表或下方添加产品。")
+            with st.container(height=385, border=False):
+                for item in watchlist:
+                    quote = quotes.get(item.key)
+                    name, price, remove = st.columns([2, 1.25, .5], vertical_alignment="center")
+                    with name:
+                        if st.button(item.name, key=f"watch_inspect_{item.key}", type="tertiary"):
+                            action("inspect", item.key)
+                        st.caption(f"{item.symbol} · {item.currency}")
+                    with price:
+                        color = "rise" if quote and quote.change_pct is not None and quote.change_pct >= 0 else "fall"
+                        st.markdown(f'<div class="watch-price">{quote.price:,.3f}</div><div class="{color}" style="font-size:10px;text-align:right">{pct(quote.change_pct)}</div>' if quote else '<div class="watch-price">—</div>', unsafe_allow_html=True)
+                    if remove.button("−", key=f"watch_remove_{item.key}", help=f"移除 {item.name}"):
+                        action("remove", item.key)
+                    status = "合成演示" if demo else "更新中" if item.key in waiting else "更新失败 / 缓存" if item.key in errors or (quote and quote.stale) else "已公布净值" if item.market == "FUND" and quote else "行情快照" if quote else "暂不可用"
+                    st.caption(status + (f" · {time_label(quote.market_time or quote.fetched_at)}" if quote else ""))
+            with st.expander("批量管理"):
+                if watchlist:
+                    st.selectbox("移除标的", [item.key for item in watchlist], key="remove_key")
+                    if st.button("移除自选", key="remove_watch"):
+                        action("remove", st.session_state.remove_key)
+        with discover_tab:
+            query = st.text_input("搜索可添加产品", placeholder="名称或代码", key="discover_query").strip().lower()
+            for item in candidates:
+                if query and query not in (item.name + item.symbol).lower():
+                    continue
+                name, add = st.columns([3, 1])
+                name.markdown(f'<div class="watch-item"><div class="watch-name">{escape(item.name)}</div><div class="watch-code">{item.symbol} · {MARKETS[item.market]}</div></div>', unsafe_allow_html=True)
+                if add.button("＋", key=f"discover_add_{item.key}", help=f"添加 {item.name}", disabled=len(watchlist) >= 20):
+                    action("add", item.key)
+            if not candidates:
+                st.info("基础观察池已全部加入自选，仍可添加其他代码。")
+        with st.expander("添加其他代码"):
+            with st.form("add_form"):
+                st.selectbox("市场", list(MARKETS), format_func=lambda key: MARKETS[key], key="new_market")
+                st.text_input("证券代码", placeholder="600519 / 00700 / AAPL", key="new_symbol", max_chars=20)
+                st.text_input("显示名称（可选）", key="new_name", max_chars=40)
+                submitted = st.form_submit_button("＋ 添加自选", key="add_watch", width="stretch")
+            if submitted:
+                try:
+                    item = Instrument.create(st.session_state.new_market, st.session_state.new_symbol, st.session_state.new_name)
+                    if item.key in {value.key for value in watchlist}:
+                        st.info("该产品已在自选中")
+                    elif len(watchlist) >= 20:
+                        st.error("最多支持 20 个自选，请先移除不需要的产品")
+                    else:
+                        store.save_watchlist(watchlist + [item])
+                        st.rerun(scope="app")
+                except ValueError as exc:
+                    st.error(str(exc))
+        st.caption("自选保存在本机。发现列表为固定观察池，不代表已获推荐。")
+
+
+selected_items = {item.key: item for item in watchlist}
+inspection = st.session_state.get("inspection_key")
+if inspection:
+    selected_items.update({item.key: item for item in universe(watchlist) if item.key == inspection})
+active_item = None
+if selected_items:
+    if st.session_state.get("selected_key") not in selected_items:
+        st.session_state.selected_key = next(iter(selected_items))
+    with st.sidebar.expander("图表联动标的", expanded=workspace == "深度分析"):
+        active_key = st.selectbox("联动分析标的", list(selected_items), key="selected_key")
+        active_item = selected_items[active_key]
+
+with main_column:
+    overview()
+    if workspace == "今日工作台":
+        recommendations()
+    elif workspace == "深度分析":
+        if active_item:
+            render_history(active_item, service, demo, TODAY)
+        else:
+            st.info("请从右侧添加一个产品，再查看历史分析。")
     else:
-        with st.spinner("正在读取历史数据…"):
-            try:
-                result = demo_history(item, start, end) if demo else service.history(item, start, end, adjust, force=refresh_history)
-            except Exception as exc:
-                st.info(f"暂时无法加载 {item.name} 的历史数据：{exc}")
-    if result is not None and not result.frame.empty:
-        frame = result.frame
-        if result.stale:
-            st.warning(f"历史数据更新失败，现展示本地缓存。实际覆盖 {frame.date.min():%Y-%m-%d} ～ {frame.date.max():%Y-%m-%d}。{result.error}")
-        chart_title, chart_type = st.columns([4, 1.2])
-        with chart_title:
-            st.markdown(f"### {escape(item.name)}　<span style='font-size:12px;font-weight:400;color:#8390a5'>{escape(item.symbol)}</span>", unsafe_allow_html=True)
-            st.caption(f"{frame.date.min():%Y.%m.%d} — {frame.date.max():%Y.%m.%d}　/　{adjustment}")
-        with chart_type:
-            chart_style = st.segmented_control("图表类型", ["走势", "K 线"], default="走势", label_visibility="collapsed") if item.market != "FUND" else "走势"
-        with st.container(border=True):
-            st.plotly_chart(price_chart(frame, chart_style == "K 线", item.currency), width="stretch", config={"displayModeBar": False})
-        metrics = summarize(frame)
-        columns = st.columns(4)
-        labels = [("区间涨跌幅", percent(metrics["return"])), ("最大回撤", percent(metrics["max_drawdown"])),
-                  ("年化波动率", "—" if metrics["volatility"] is None else f"{metrics['volatility']:.2%}"), ("数据点", str(metrics["observations"]))]
-        for column, (label, value) in zip(columns, labels):
-            column.metric(label, value)
-        st.caption("区间涨跌幅按首末价格计算；年化波动率按日收益标准差 × √252 估算。原始价格与基金单位净值未计分红再投，不等于投资总收益。")
-        with st.expander("查看区间涨跌幅与回撤曲线"):
-            st.plotly_chart(performance_chart(frame), width="stretch", config={"displayModeBar": False})
-        st.caption(f"来源：{result.source}　·　历史获取时间：{timestamp_label(result.fetched_at)}　·　成交量单位：{'手' if item.market in {'CN', 'ETF'} else '股' if item.market in {'US', 'HK'} else '无'}")
-    elif result is not None:
-        st.info("所选区间没有交易或净值数据，请扩大时间范围。")
+        st.markdown("### 数据与筛选方法")
+        st.markdown("境内股票/ETF 使用 AKShare 历史及东方财富报价；港美股使用 yfinance；场外基金使用已公布单位净值。报价可能延迟，获取时间不等于成交时间。")
+        st.markdown("**观察池范围：** 基础观察池 12 个产品，加当前自选。核心方向使用 ETF 作为市场代理；上涨/下跌数仅统计有效自选样本，不代表全市场。")
+        st.markdown("**推荐口径：** 依据最近可用复权日线；信号价格显示截至日期。少于 30 个数据点、超过 7 个自然日未更新或请求失败回退的历史不入选。没有符合条件的产品时保持空缺。")
+        st.markdown("**刷新与缓存：** 报价默认每 15 秒后台更新；行情失败保留原时间并标注。历史扫描独立后台进行，默认小时缓存，点击重新筛选主动更新。暂停行情不暂停历史任务进度。")
+        st.markdown("**本地数据：** 真实数据与合成演示数据隔离。自选和缓存位于本机 data/ 目录，不随源码上传；无交易或券商账户接口。")
 
-with data_tab:
-    st.markdown("### 历史数据明细")
-    if result is not None and not result.frame.empty:
-        export = result.frame.copy()
-        export["date"] = export.date.dt.strftime("%Y-%m-%d")
-        export["symbol"] = item.symbol
-        export["market"] = item.market
-        export["currency"] = item.currency
-        export["adjustment"] = "synthetic" if demo else adjust
-        export["source"] = result.source
-        export["fetched_at"] = result.fetched_at
-        st.download_button("↓ 导出 CSV", export.to_csv(index=False).encode("utf-8-sig"),
-                           file_name=f"{'DEMO_' if demo else ''}{item.market}_{item.symbol}_{adjust}_{start}_{end}.csv", mime="text/csv")
-        st.dataframe(export.sort_values("date", ascending=False), hide_index=True, width="stretch")
-        st.caption("导出包含来源、币种、价格口径和获取时间，方便在 Excel 或 Python 中继续分析。")
-    else:
-        st.info("加载历史数据后，可以在这里查看和导出。")
+with rail_column:
+    watch_rail()
 
-with about_tab:
-    st.markdown("### 先了解数据，再做判断")
-    st.markdown("""
-| 数据 | 获取方式 | 需要留意 |
-| :--- | :--- | :--- |
-| A 股 / 境内 ETF | AKShare 历史 + 东方财富报价 | 上游报价快照；未提供成交时间时会明确标注，获取时间不等于成交时间 |
-| 港股 / 美股 / 海外 ETF | yfinance → Yahoo Finance | 最近一分钟行情，可能延迟；覆盖范围取决于 Yahoo，适合个人研究 |
-| 场外基金 | AKShare → 天天基金 | 已公布单位净值，按净值日期展示；无盘中真实净值 |
-| 历史价格 | 同上，本地 SQLite 缓存 | 默认日线；交易日历不同，跨市场日期不直接等价 |
-| 演示模式 | 固定种子的合成序列 | 仅用于预览；数据库与真实行情隔离，CSV 标注 DEMO |
-""")
-    st.markdown("**缓存与刷新：** 默认每 15 秒自动检查行情，可选 5 / 30 / 60 / 120 / 300 秒或暂停；行情缓存随所选间隔到期，数据源响应慢时刷新会顺延。历史缓存 1 小时；刷新失败保留原时间并标注。原始价格后续更新最近 7 天，向前扩展区间时补齐更早历史。复权价格刷新时重载整个已缓存区间，保持口径一致。")
-    st.markdown("**价格口径：** 前/后复权及 Yahoo 复权用于比较历史价格；不同来源的调整规则可能不同。复权价格与未复权价格分别缓存，避免混用。")
-    st.markdown("**网络与使用：** 两个来源均不保证持续可用或固定延迟。数据使用遵循上游条款；本工具用于个人观察和研究。所有自选、缓存保存在本机 `data/`，不会随代码上传。")
-
-st.markdown('<div class="footer">STOCKEASY　/　个人市场观察工作台 <span style="float:right">AKShare + yfinance　·　本地存储</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">STOCKEASY / PC 市场工作台　　可解释信号 · 本地存储 <span style="float:right">AKShare + yfinance</span></div>', unsafe_allow_html=True)

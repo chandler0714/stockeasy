@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from pathlib import Path
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_demo_dashboard_renders_analysis_without_network(self):
         app = AppTest.from_file(APP, default_timeout=20).run()
+        app.radio(key="workspace").set_value("深度分析").run()
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(any("演示" in item.value for item in app.warning))
         self.assertGreaterEqual(len(app.metric), 4)
@@ -27,6 +29,30 @@ class DashboardTests(unittest.TestCase):
         self.assertTrue(any("导出" in str(item.label) for item in app.get("download_button")))
         # Demo never creates or fills the real market cache.
         self.assertFalse((Path(self.temp.name) / "market.sqlite").exists())
+
+    def test_pc_dashboard_has_daily_ideas_and_candidate_actions(self):
+        app = AppTest.from_file(APP, default_timeout=20).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("当日推荐" in item.value for item in app.markdown))
+        self.assertTrue(any("我的自选" in item.value for item in app.markdown))
+        self.assertTrue(any("风险观察" in item.value for item in app.markdown))
+        app.button(key="discover_add_ETF:159915").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn("ETF:159915", app.selectbox(key="selected_key").options)
+        self.assertFalse(any(button.key == "discover_add_ETF:159915" for button in app.button))
+
+    def test_beijing_midnight_rolls_header_and_daily_scan_forward(self):
+        calls = 0
+
+        def advancing_day():
+            nonlocal calls
+            calls += 1
+            return date(2026, 10, 29) if calls == 1 else date(2026, 10, 30)
+
+        with patch("stockeasy.presentation.beijing_day", side_effect=advancing_day):
+            app = AppTest.from_file(APP, default_timeout=20).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("2026.10.30" in item.value for item in app.markdown))
 
     def test_add_and_remove_watchlist(self):
         app = AppTest.from_file(APP, default_timeout=20).run()
